@@ -21,6 +21,8 @@ def get_options(args=None):
                         help="Strategy for k-nearest neighbors (None/'percentage')")
     parser.add_argument('--n_epochs', type=int, default=100, 
                         help='The number of epochs to train')
+    parser.add_argument('--max_steps', type=int, default=-1, 
+                        help='The max total training steps to train (-1 indicates no max_steps)')
     parser.add_argument('--epoch_size', type=int, default=1000000, 
                         help='Number of instances per epoch during training')
     parser.add_argument('--batch_size', type=int, default=128, 

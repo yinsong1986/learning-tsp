@@ -14,6 +14,7 @@ from utils.log_utils import log_values, log_values_sl
 from utils.data_utils import BatchedRandomSampler
 from utils import move_to
 
+import torch.cuda.nvtx as nvtx
 
 def get_inner_model(model):
     return model.module if isinstance(model, DataParallel) else model
@@ -93,6 +94,7 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_datasets, p
         tb_logger.log_value('learnrate_pg0', optimizer.param_groups[0]['lr'], step)
 
     # Generate new training data for each epoch
+    nvtx.range_push("Train dataloader")
     train_dataset = baseline.wrap_dataset(
         problem.make_dataset(
             min_size=opts.min_size, max_size=opts.max_size, batch_size=opts.batch_size, 
@@ -101,6 +103,7 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_datasets, p
         ))
     train_dataloader = DataLoader(
         train_dataset, batch_size=opts.batch_size, shuffle=False, num_workers=opts.num_workers)
+    nvtx.range_pop()
 
     # Put model in train mode!
     model.train()
@@ -109,6 +112,7 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_datasets, p
 
     for batch_id, batch in enumerate(tqdm(train_dataloader, disable=opts.no_progress_bar, ascii=True)):
 
+        nvtx.range_push(f"Step {step}")
         train_batch(
             model,
             optimizer,
@@ -120,8 +124,11 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_datasets, p
             tb_logger,
             opts
         )
+        nvtx.range_pop() # end training Step
 
         step += 1
+        if opts.max_steps > 0 and step > opts.max_steps:
+            break
     
     lr_scheduler.step(epoch)
 
@@ -156,39 +163,56 @@ def train_batch(model, optimizer, baseline, epoch,
     bat, bl_val = baseline.unwrap_batch(batch)
     
     # Optionally move Tensors to GPU
+    nvtx.range_push("Copy to device")
     x = move_to(bat['nodes'], opts.device)
     graph = move_to(bat['graph'], opts.device)
     bl_val = move_to(bl_val, opts.device) if bl_val is not None else None
+    nvtx.range_pop() # End Copy to device
 
     # Evaluate model, get costs and log probabilities
+    nvtx.range_push("Forward pass")
     cost, log_likelihood = model(x, graph)
+    nvtx.range_pop() # End Forward pass
 
     # Evaluate baseline, get baseline loss if any (only for critic)
+    nvtx.range_push("Calculate baseline loss")
     bl_val, bl_loss = baseline.eval(x, graph, cost) if bl_val is None else (bl_val, 0)
+    nvtx.range_pop() # End Baseline loss
 
     # Calculate loss
+    nvtx.range_push("Calculate loss")
     reinforce_loss = ((cost - bl_val) * log_likelihood).mean()
     loss = reinforce_loss + bl_loss
+    nvtx.range_pop()  # End Calculate loss
     
     # Normalize loss for gradient accumulation
     loss = loss / opts.accumulation_steps
 
     # Perform backward pass
+    nvtx.range_push("Calculate gradients")
     loss.backward()
+    nvtx.range_pop()  # End Calculate gradients
     
     # Clip gradient norms and get (clipped) gradient norms for logging
+    nvtx.range_push(f"Clip gradients")
     grad_norms = clip_grad_norms(optimizer.param_groups, opts.max_grad_norm)
+    nvtx.range_pop() # End clip gradients
     
     # Perform optimization step after accumulating gradients
     if step % opts.accumulation_steps == 0:
+        nvtx.range_push(f"Update parameters")
         optimizer.step()
+        nvtx.range_pop()  # End Update parameters
+        nvtx.range_push(f"Zero gradients")
         optimizer.zero_grad()
+        nvtx.range_pop()  # End Zero gradients
 
     # Logging
     if step % int(opts.log_step) == 0:
+        nvtx.range_push(f"Logging")
         log_values(cost, grad_norms, epoch, batch_id, step, log_likelihood, 
                    reinforce_loss, bl_loss, tb_logger, opts)
-
+        nvtx.range_pop()  # End Logging
         
 def train_epoch_sl(model, optimizer, lr_scheduler, epoch, train_dataset, val_datasets, problem, tb_logger, opts):
     print("\nStart train epoch {}, lr={} for run {}".format(epoch, optimizer.param_groups[0]['lr'], opts.run_name))
