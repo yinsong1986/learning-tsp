@@ -13,5 +13,4 @@ CUDA_VISIBLE_DEVICES=0 time python run.py \
   --run_name tsp_attention_gnn_rollout \
   --gated \
   --val_size 1280 \
-  --n_epochs 1 \
-  --max_steps 1000
+  --n_epochs 140 \

@@ -112,7 +112,7 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_datasets, p
 
     for batch_id, batch in enumerate(tqdm(train_dataloader, disable=opts.no_progress_bar, ascii=True)):
 
-        nvtx.range_push(f"Step {step}")
+        nvtx.range_push(f"Batch {batch_id}")
         train_batch(
             model,
             optimizer,
@@ -199,20 +199,16 @@ def train_batch(model, optimizer, baseline, epoch,
     nvtx.range_pop() # End clip gradients
     
     # Perform optimization step after accumulating gradients
+    nvtx.range_push(f"Update parameters")
     if step % opts.accumulation_steps == 0:
-        nvtx.range_push(f"Update parameters")
         optimizer.step()
-        nvtx.range_pop()  # End Update parameters
-        nvtx.range_push(f"Zero gradients")
         optimizer.zero_grad()
-        nvtx.range_pop()  # End Zero gradients
+    nvtx.range_pop()  # End Update parameters
 
     # Logging
     if step % int(opts.log_step) == 0:
-        nvtx.range_push(f"Logging")
         log_values(cost, grad_norms, epoch, batch_id, step, log_likelihood, 
                    reinforce_loss, bl_loss, tb_logger, opts)
-        nvtx.range_pop()  # End Logging
         
 def train_epoch_sl(model, optimizer, lr_scheduler, epoch, train_dataset, val_datasets, problem, tb_logger, opts):
     print("\nStart train epoch {}, lr={} for run {}".format(epoch, optimizer.param_groups[0]['lr'], opts.run_name))
