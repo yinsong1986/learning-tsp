@@ -1,6 +1,5 @@
 #!/bin/bash
-# CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 time python run.py \
-CUDA_VISIBLE_DEVICES=1 time python run.py \
+CUDA_VISIBLE_DEVICES=0 dlprof python run.py \
   --problem tsp \
   --model attention \
   --encoder gnn \
@@ -15,3 +14,4 @@ CUDA_VISIBLE_DEVICES=1 time python run.py \
   --gated \
   --val_size 128 \
   --n_epochs 1 \
+  --max_steps 50 \
